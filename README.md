@@ -43,6 +43,13 @@ python -c "import rclpy; import dynamixel_sdk"
 
 如果这条命令失败，不要继续在 conda 环境里构建 ROS2 包，直接切回系统 ROS2 环境。
 
+你这类现场环境还有一个常见坑：
+
+- `dynamixel_sdk` 能在 `lerobot` 里用
+- `rclpy` 只能在系统 ROS2 Python 里用
+
+这会导致“普通 Python 脚本能动，但 `ros2 run` 或 `colcon build` 不工作”。如果你遇到的正是这种情况，优先使用下面的“直接脚本版 ROS2 节点”，不要先纠缠 `colcon`。
+
 ## 部署步骤
 
 以下命令在 Orange Pi 上执行。
@@ -65,7 +72,41 @@ python3 -m pip install --user dynamixel-sdk
 
 如果你已经在目标环境里装过，可以跳过。
 
-### 3. 构建工作区
+### 3. 先验证 Python 环境
+
+先分别验证两个 Python：
+
+```bash
+which python3
+python3 -c "import dynamixel_sdk"
+/usr/bin/python3 -c "import rclpy"
+```
+
+如果 `/usr/bin/python3` 不能导入 `dynamixel_sdk`，安装一次：
+
+```bash
+/usr/bin/python3 -m pip install --user dynamixel-sdk
+```
+
+### 4. 推荐方式: 直接运行 ROS2 脚本
+
+这是最适合你当前状态的方案，不需要 `colcon build`。
+
+```bash
+source /opt/ros/foxy/setup.bash
+/usr/bin/python3 ~/Openpi/scripts/rx64_ros2_node.py
+```
+
+启动后可直接发命令：
+
+```bash
+ros2 topic pub --once /rx64/goal_position_deg std_msgs/msg/Float64 "{data: 10.0}"
+ros2 topic pub --once /rx64/goal_position_raw std_msgs/msg/UInt16 "{data: 512}"
+ros2 service call /rx64/torque_enable std_srvs/srv/SetBool "{data: true}"
+ros2 topic echo /joint_states
+```
+
+### 5. 可选方式: 构建工作区
 
 把这个仓库放到 Orange Pi 后：
 
@@ -75,7 +116,7 @@ colcon build --symlink-install
 source install/setup.bash
 ```
 
-### 4. 先做非 ROS2 连通性确认
+### 6. 先做非 ROS2 连通性确认
 
 ```bash
 ros2 run aloha_rx64_bridge rx64_ping --ros-args \
@@ -86,7 +127,7 @@ ros2 run aloha_rx64_bridge rx64_ping --ros-args \
 
 预期会打印型号、当前位置、电压、温度。
 
-### 5. 启动单舵机 ROS2 节点
+### 7. 启动单舵机 ROS2 节点
 
 ```bash
 ros2 launch aloha_rx64_bridge rx64_single.launch.py
@@ -99,7 +140,7 @@ ros2 launch aloha_rx64_bridge rx64_single.launch.py
 - `servo_id=6`
 - `joint_name=rx64_joint`
 
-### 6. 发控制命令
+### 8. 发控制命令
 
 直接发弧度命令，零点默认是 `raw=512`：
 
@@ -119,13 +160,13 @@ ros2 topic pub --once /rx64_single/goal_position_deg std_msgs/msg/Float64 "{data
 ros2 topic pub --once /rx64_single/goal_raw std_msgs/msg/UInt16 "{data: 600}"
 ```
 
-### 7. 看反馈
+### 9. 看反馈
 
 ```bash
 ros2 topic echo /joint_states
 ```
 
-### 8. 开关扭矩
+### 10. 开关扭矩
 
 ```bash
 ros2 service call /rx64_single/torque_enable std_srvs/srv/SetBool "{data: true}"

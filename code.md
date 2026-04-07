@@ -122,3 +122,23 @@ port.closePort()
 1. 先用 `rx64_ping` 做启动前自检。
 2. 再用 `rx64_single_node` 发布 `/joint_states` 并接收控制命令。
 3. 单舵机确认稳定后，再扩展到 ALOHA 多关节映射。
+
+如果 Orange Pi 上出现“`dynamixel_sdk` 脚本能动，但 `ros2 run` / `colcon build` 不工作”，优先改用直接脚本方式：
+
+- [scripts/rx64_ros2_node.py](/home/dlts/Openpi/scripts/rx64_ros2_node.py)
+
+推荐命令：
+
+```bash
+source /opt/ros/foxy/setup.bash
+/usr/bin/python3 ~/Openpi/scripts/rx64_ros2_node.py
+```
+
+控制命令：
+
+```bash
+ros2 topic pub --once /rx64/goal_position_deg std_msgs/msg/Float64 "{data: 10.0}"
+ros2 topic pub --once /rx64/goal_position_raw std_msgs/msg/UInt16 "{data: 512}"
+ros2 service call /rx64/torque_enable std_srvs/srv/SetBool "{data: true}"
+ros2 topic echo /joint_states
+```
