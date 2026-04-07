@@ -338,6 +338,7 @@ def list_js_devices() -> list[str]:
 
 def list_input_devices() -> None:
     found_any = False
+    permission_errors = []
 
     try:
         from evdev import InputDevice, list_devices
@@ -346,10 +347,15 @@ def list_input_devices() -> None:
         list_devices = None
 
     if InputDevice is not None and list_devices is not None:
-        devices = [InputDevice(path) for path in list_devices()]
-        for device in devices:
-            print(f"{device.path} | type=event | name={device.name} | phys={device.phys}")
-            found_any = True
+        for path in list_devices():
+            try:
+                device = InputDevice(path)
+                print(f"{device.path} | type=event | name={device.name} | phys={device.phys}")
+                found_any = True
+            except PermissionError:
+                permission_errors.append(path)
+            except OSError:
+                continue
 
     for device_path in list_js_devices():
         try:
@@ -361,6 +367,11 @@ def list_input_devices() -> None:
 
     if not found_any:
         print("没有发现 /dev/input/event* 或 /dev/input/js* 设备")
+    if permission_errors:
+        print("以下 event 设备存在，但当前用户无权限打开:")
+        for path in permission_errors:
+            print(f"  {path}")
+        print("可临时用 sudo 运行，或把当前用户加入 input 组后重新登录")
 
 
 def run_js_gamepad_mode(session: ManualSession, device_path: Optional[str], deadzone: int) -> None:
