@@ -38,7 +38,11 @@ RX-64 手动调节程序
 """
 
 import argparse
+import array
+import fcntl
+import os
 import select
+import struct
 import sys
 import termios
 import time
@@ -313,32 +317,131 @@ def run_keyboard_mode(session: ManualSession) -> None:
                 break
 
 
+def get_js_device_name(device_path: str) -> str:
+    buf = array.array("B", [0] * 128)
+    with open(device_path, "rb", buffering=0) as handle:
+        fcntl.ioctl(handle, 0x80006A13 + (len(buf) << 16), buf, True)
+    raw = bytes(buf).split(b"\x00", 1)[0]
+    return raw.decode(errors="ignore") or "unknown"
+
+
+def list_js_devices() -> list[str]:
+    input_dir = "/dev/input"
+    if not os.path.isdir(input_dir):
+        return []
+    return sorted(
+        os.path.join(input_dir, name)
+        for name in os.listdir(input_dir)
+        if name.startswith("js")
+    )
+
+
 def list_input_devices() -> None:
+    found_any = False
+
     try:
         from evdev import InputDevice, list_devices
-    except ImportError as exc:
-        raise RuntimeError("未安装 evdev，请先执行: python3 -m pip install --user evdev") from exc
+    except ImportError:
+        InputDevice = None
+        list_devices = None
 
-    devices = [InputDevice(path) for path in list_devices()]
-    if not devices:
-        print("没有发现 /dev/input/event* 设备")
-        return
-    for device in devices:
-        print(f"{device.path} | name={device.name} | phys={device.phys}")
+    if InputDevice is not None and list_devices is not None:
+        devices = [InputDevice(path) for path in list_devices()]
+        for device in devices:
+            print(f"{device.path} | type=event | name={device.name} | phys={device.phys}")
+            found_any = True
+
+    for device_path in list_js_devices():
+        try:
+            name = get_js_device_name(device_path)
+        except Exception:
+            name = "unknown"
+        print(f"{device_path} | type=js | name={name}")
+        found_any = True
+
+    if not found_any:
+        print("没有发现 /dev/input/event* 或 /dev/input/js* 设备")
+
+
+def run_js_gamepad_mode(session: ManualSession, device_path: Optional[str], deadzone: int) -> None:
+    js_devices = list_js_devices()
+    if device_path is None:
+        if not js_devices:
+            raise RuntimeError("未找到 /dev/input/js* 设备")
+        js_device = js_devices[0]
+    else:
+        js_device = device_path
+
+    if not os.path.exists(js_device):
+        raise RuntimeError(f"手柄设备不存在: {js_device}")
+
+    try:
+        name = get_js_device_name(js_device)
+    except Exception:
+        name = "unknown"
+
+    print(f"使用手柄设备: {js_device} | {name}")
+    print("JS 手柄模式已启动，按 Ctrl+C 退出")
+    print("A:状态  B:扭矩  X:中位  Y:帮助  左右方向/摇杆:调位置  LB/RB:大步")
+
+    axis_deadzone = min(deadzone, 5000) if deadzone > 255 else deadzone
+
+    with open(js_device, "rb", buffering=0) as handle:
+        while True:
+            data = handle.read(8)
+            if len(data) != 8:
+                time.sleep(0.01)
+                continue
+
+            _, value, event_type, number = struct.unpack("IhBB", data)
+            event_type = event_type & ~0x80
+
+            if event_type == 0x01:
+                if value != 1:
+                    continue
+                if number == 0:
+                    session.print_live_status()
+                elif number == 1:
+                    session.toggle_torque()
+                elif number == 2:
+                    session.move_absolute((session.min_position + session.max_position) // 2)
+                elif number == 3:
+                    session.print_help()
+                elif number == 4:
+                    session.move_relative(-session.big_step_raw)
+                elif number == 5:
+                    session.move_relative(session.big_step_raw)
+            elif event_type == 0x02:
+                if number in (0, 6):
+                    if value < -axis_deadzone:
+                        session.move_relative(-session.step_raw)
+                    elif value > axis_deadzone:
+                        session.move_relative(session.step_raw)
+                elif number in (2, 4):
+                    if value > axis_deadzone:
+                        session.move_relative(-session.big_step_raw)
+                elif number in (5, 7):
+                    if value > axis_deadzone:
+                        session.move_relative(session.big_step_raw)
 
 
 def run_gamepad_mode(session: ManualSession, device_path: Optional[str], deadzone: int) -> None:
     try:
         from evdev import InputDevice, categorize, ecodes, list_devices
-    except ImportError as exc:
-        raise RuntimeError("未安装 evdev，请先执行: python3 -m pip install --user evdev") from exc
+    except ImportError:
+        run_js_gamepad_mode(session, device_path, deadzone)
+        return
 
     if device_path is None:
         devices = [InputDevice(path) for path in list_devices()]
         if not devices:
-            raise RuntimeError("未找到手柄输入设备，请先确认 /dev/input/event*")
+            run_js_gamepad_mode(session, device_path, deadzone)
+            return
         device = devices[0]
     else:
+        if device_path.endswith("/js0") or "/js" in device_path:
+            run_js_gamepad_mode(session, device_path, deadzone)
+            return
         device = InputDevice(device_path)
 
     print(f"使用手柄设备: {device.path} | {device.name}")

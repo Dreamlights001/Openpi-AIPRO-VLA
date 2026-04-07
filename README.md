@@ -28,6 +28,8 @@
 
 - [code.md](/home/dlts/Openpi/code.md): 现场硬件与寄存器记录
 - [ros2_ws/src/aloha_rx64_bridge](/home/dlts/Openpi/ros2_ws/src/aloha_rx64_bridge): 最小可用 ROS2 控制包
+- [scripts/rx64_limit_test.py](/home/dlts/Openpi/scripts/rx64_limit_test.py): 位限探测脚本
+- [scripts/rx64_manual_control.py](/home/dlts/Openpi/scripts/rx64_manual_control.py): 键盘/手柄手动调节脚本
 
 ## Orange Pi 上的建议运行方式
 
@@ -195,3 +197,23 @@ ros2 service call /rx64_single/torque_enable std_srvs/srv/SetBool "{data: false}
 - 首次动作建议只发很小的角度，比如 `5~10` 度。
 - 默认零点是 `raw=512`，但你的机构装配零位可能不是这里，正式上机械臂前要重新标定。
 - 如果机械限位未知，先只用 `goal_raw` 在小范围试探，不要一上来打满行程。
+
+## 手动调节
+
+键盘模式不依赖额外库:
+
+```bash
+python3 ~/Openpi/scripts/rx64_manual_control.py --mode keyboard --step 16 --big-step 64
+```
+
+如果要用手柄，先查看输入设备:
+
+```bash
+python3 ~/Openpi/scripts/rx64_manual_control.py --list-inputs
+```
+
+再指定手柄设备运行:
+
+```bash
+python3 ~/Openpi/scripts/rx64_manual_control.py --mode gamepad --gamepad-device /dev/input/event4
+```
